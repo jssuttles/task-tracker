@@ -1,11 +1,14 @@
 /**
  * The task model and its transitions.
  *
- * Deliberately three states and a title. Every extra field is friction on a
- * prompt you see eight times a day, and a check-in you resent filling in is a
- * check-in you stop filling in. Projects, estimates and time tracking are
- * tracked in `docs/future-work.md`, not here.
+ * Deliberately three states, a title, and the date it first appeared. Every
+ * extra field the *user* has to fill is friction on a prompt you see eight
+ * times a day, and a check-in you resent filling in is a check-in you stop
+ * filling in — so `added` is stamped by the app and never typed. Projects,
+ * estimates and time tracking are tracked in `docs/future-work.md`, not here.
  */
+
+import type { DateKey } from './dates.ts';
 
 /** Where a task stands. Mirrors the checkbox markers in the day file. */
 export type TaskStatus = 'upcoming' | 'in-progress' | 'completed';
@@ -15,11 +18,19 @@ export interface Task {
   title: string;
   status: TaskStatus;
   /**
-   * `true` when this task rolled over from an earlier day. Derived at carry-over
-   * time and not persisted — the previous day's file is the record of when a
-   * task first appeared.
+   * The day this task first appeared, preserved as it carries forward.
+   *
+   * This is the one thing about a task that cannot be recovered by reading the
+   * file it lives in. A day file's own date tells you when a task was
+   * *completed* — the `[x]` is sitting in that day. Nothing tells you when it
+   * started, so "this took five days" and "this kept slipping" are only
+   * answerable by diffing consecutive files and matching on title, which is
+   * exactly the kind of reconstruction an agent does confidently and wrong.
+   *
+   * Optional because team-file tasks (`team.<person>.md`) don't carry it —
+   * that file spans many days and stamps completion instead.
    */
-  carriedOver?: boolean;
+  added?: DateKey;
 }
 
 /** Statuses that mean "still on your plate". */
@@ -98,12 +109,17 @@ function wasCompletedBefore(title: string, previouslyCompleted: ReadonlySet<stri
  *
  * Returns a new array; the input is never mutated.
  */
-export function addTask(tasks: readonly Task[], title: string, status: TaskStatus = 'upcoming') {
+export function addTask(
+  tasks: readonly Task[],
+  title: string,
+  status: TaskStatus = 'upcoming',
+  added?: DateKey,
+): Task[] {
   const trimmed = title.trim();
   if (trimmed === '') return [...tasks];
   if (tasks.some((task) => sameTask(task.title, trimmed))) return [...tasks];
 
-  return [...tasks, { title: trimmed, status }];
+  return [...tasks, { title: trimmed, status, ...(added === undefined ? {} : { added }) }];
 }
 
 /** Set the status of the task matching `title`. Returns a new array. */
@@ -122,14 +138,31 @@ export function removeTask(tasks: readonly Task[], title: string): Task[] {
  * Completed work stays behind in the day that finished it — carrying it forward
  * would make every day file an ever-growing copy of the last. In-progress tasks
  * keep their status (you were mid-flight, you still are); upcoming tasks stay
- * upcoming. Both get flagged so the UI can show what slipped.
+ * upcoming.
+ *
+ * `previousDate` is the day being carried *from*, and stamps any task that has
+ * no `added` date yet — a file written before this field existed, or one a hand
+ * edit introduced a task into. It is a floor, not a correction: the task was
+ * demonstrably alive on that day, even if it first appeared earlier.
  */
-export function carryOverTasks(previous: readonly Task[]): Task[] {
+export function carryOverTasks(previous: readonly Task[], previousDate: DateKey): Task[] {
   return previous.filter(isOpen).map((task) => ({
     title: task.title,
     status: task.status,
-    carriedOver: true,
+    added: task.added ?? previousDate,
   }));
+}
+
+/**
+ * `true` when this task reached `dayDate` from an earlier day — what the card
+ * marks as "slipped".
+ *
+ * Derived rather than stored: a flag set at carry-over time is gone the moment
+ * the app restarts and re-reads the file, so the marker used to vanish mid-day
+ * for exactly the tasks it was there to highlight.
+ */
+export function isCarriedOver(task: Task, dayDate: DateKey): boolean {
+  return task.added !== undefined && task.added < dayDate;
 }
 
 /** Counts by status, for the tray tooltip and the day heading. */

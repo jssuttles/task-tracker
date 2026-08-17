@@ -49,6 +49,39 @@ pub fn default_vault_dir<R: Runtime>(app: &AppHandle<R>) -> PathBuf {
         .join("TaskTracker")
 }
 
+/// `YYYY-Www`, the same shape whether it stands alone or is the week part of
+/// `YYYY-Www-team`.
+fn is_week_stem(stem: &str) -> bool {
+    stem.len() == 8
+        && stem
+            .chars()
+            .enumerate()
+            .all(|(index, character)| match index {
+                4 => character == '-',
+                5 => character == 'W',
+                _ => character.is_ascii_digit(),
+            })
+}
+
+/// A lowercase handle: the same character set `@mentions` extract in the
+/// frontend (`src/lib/markdown/mentions.ts`) and `isPersonHandle` mirror in
+/// `src/lib/vault.ts` — alphanumeric first and last character, with `.`, `_`
+/// and `-` allowed in between.
+fn is_person_handle(handle: &str) -> bool {
+    let chars: Vec<char> = handle.chars().collect();
+    let len = chars.len();
+    if len == 0 {
+        return false;
+    }
+
+    let is_alnum = |c: char| c.is_ascii_lowercase() || c.is_ascii_digit();
+    let is_inner = |c: char| is_alnum(c) || c == '.' || c == '_' || c == '-';
+
+    is_alnum(chars[0])
+        && is_alnum(chars[len - 1])
+        && (len < 3 || chars[1..len - 1].iter().all(|c| is_inner(*c)))
+}
+
 /// Is this a filename the app owns?
 ///
 /// Mirrors `isSafeVaultName` in `src/lib/vault.ts`. Both exist deliberately:
@@ -79,17 +112,15 @@ fn is_safe_name(name: &str) -> bool {
             });
 
     // `YYYY-Www`
-    let is_week = stem.len() == 8
-        && stem
-            .chars()
-            .enumerate()
-            .all(|(index, character)| match index {
-                4 => character == '-',
-                5 => character == 'W',
-                _ => character.is_ascii_digit(),
-            });
+    let is_week = is_week_stem(stem);
 
-    is_day || is_week
+    // `YYYY-Www-team`, the manager's weekly rollup across every tracked report.
+    let is_team_week = stem.strip_suffix("-team").is_some_and(is_week_stem);
+
+    // `team.<handle>`, one report's running notes file.
+    let is_team_member = stem.strip_prefix("team.").is_some_and(is_person_handle);
+
+    is_day || is_week || is_team_week || is_team_member
 }
 
 fn resolve(dir: &Path, name: &str) -> Result<PathBuf, String> {
@@ -246,7 +277,7 @@ pub fn settings_save<R: Runtime>(app: AppHandle<R>, contents: String) -> Result<
 
 #[cfg(test)]
 mod tests {
-    use super::is_safe_name;
+    use super::{is_person_handle, is_safe_name};
 
     #[test]
     fn accepts_the_filenames_the_app_writes() {
@@ -273,5 +304,50 @@ mod tests {
         assert!(!is_safe_name("2026-X32.md"));
         assert!(!is_safe_name(""));
         assert!(!is_safe_name(".."));
+    }
+
+    #[test]
+    fn accepts_team_member_files() {
+        assert!(is_safe_name("team.alice.md"));
+        assert!(is_safe_name("team.alice-smith.md"));
+        assert!(is_safe_name("team.alice.smith.md"));
+        assert!(is_safe_name("team.a.md"));
+        assert!(is_safe_name("team.a1.md"));
+    }
+
+    #[test]
+    fn accepts_the_team_weekly_rollup() {
+        assert!(is_safe_name("2026-W32-team.md"));
+    }
+
+    #[test]
+    fn rejects_malformed_team_files() {
+        assert!(!is_safe_name("team..md"));
+        assert!(!is_safe_name("team.Alice.md"));
+        assert!(!is_safe_name("team.-alice.md"));
+        assert!(!is_safe_name("team.alice-.md"));
+        assert!(!is_safe_name("team.md"));
+        assert!(!is_safe_name("team/alice.md"));
+        assert!(!is_safe_name("2026-X32-team.md"));
+        assert!(!is_safe_name("2026-W32-teams.md"));
+    }
+
+    #[test]
+    fn is_person_handle_accepts_the_mention_character_set() {
+        assert!(is_person_handle("alice"));
+        assert!(is_person_handle("a"));
+        assert!(is_person_handle("a1"));
+        assert!(is_person_handle("alice-smith"));
+        assert!(is_person_handle("alice.smith"));
+        assert!(is_person_handle("alice_smith"));
+    }
+
+    #[test]
+    fn is_person_handle_rejects_uppercase_and_bad_edges() {
+        assert!(!is_person_handle(""));
+        assert!(!is_person_handle("Alice"));
+        assert!(!is_person_handle("-alice"));
+        assert!(!is_person_handle("alice-"));
+        assert!(!is_person_handle("al ice"));
     }
 }

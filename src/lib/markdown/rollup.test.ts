@@ -1,7 +1,17 @@
 import { describe, expect, it } from 'vitest';
 
 import { addNote, createDay, type DayDocument } from './day.ts';
-import { collectKudos, standupSummary, weeklyRollup, weekFileName } from './rollup.ts';
+import {
+  agentWeekBriefing,
+  collectKudos,
+  standupSummary,
+  teamWeeklyRollup,
+  teamWeekBriefing,
+  teamWeekFileName,
+  weeklyRollup,
+  weekFileName,
+} from './rollup.ts';
+import { addTeamNote, createTeamMember, type TeamMemberDocument } from './team.ts';
 
 function day(date: string, tasks: DayDocument['tasks'], notes: [string, string][] = []) {
   let doc = createDay(date, '09:00', '17:00', tasks);
@@ -171,5 +181,208 @@ describe('weekFileName', () => {
 
   it('returns null for a malformed date', () => {
     expect(weekFileName('nope')).toBeNull();
+  });
+});
+
+describe('agentWeekBriefing', () => {
+  const days = [
+    day(
+      '2026-08-03',
+      [
+        { title: 'Ship the rollback', status: 'completed' },
+        { title: 'Draft the RFC', status: 'in-progress' },
+      ],
+      [['10:00', '@alice saved the release #kudos']],
+    ),
+    day('2026-08-04', [{ title: 'Draft the RFC', status: 'in-progress' }]),
+  ];
+
+  it('carries the week itself', () => {
+    const briefing = agentWeekBriefing(days);
+    expect(briefing).toContain('# Week 2026-W32');
+    expect(briefing).toContain('Ship the rollback');
+    expect(briefing).toContain('Draft the RFC');
+    expect(briefing).toContain('@alice saved the release #kudos');
+  });
+
+  it('carries its own schema key, since the reader never sees CONTEXT.md', () => {
+    // The whole point: this is pasted into a chat, not read next to the vault.
+    const briefing = agentWeekBriefing(days) ?? '';
+    expect(briefing).toContain('`@name` is a colleague');
+    expect(briefing).toContain('#kudos');
+    expect(briefing).toContain('#blocker');
+    expect(briefing).toContain('#decision');
+  });
+
+  it('warns off the two readings an agent gets wrong', () => {
+    const briefing = agentWeekBriefing(days) ?? '';
+    expect(briefing).toContain('not work that was abandoned');
+    expect(briefing).toContain('not that nothing happened');
+  });
+
+  it('puts the preamble before the rollup, not after it', () => {
+    const briefing = agentWeekBriefing(days) ?? '';
+    expect(briefing.indexOf('Conventions:')).toBeLessThan(briefing.indexOf('# Week'));
+  });
+
+  it('returns null for a week with nothing logged', () => {
+    // A briefing whose body is three "Nothing" bullets looks authoritative and
+    // says nothing, which is worse than the app admitting it has nothing.
+    expect(agentWeekBriefing([])).toBeNull();
+  });
+});
+
+function member(
+  person: string,
+  tasks: TeamMemberDocument['tasks'],
+  notes: [string, string][] = [],
+  completedDates: Record<string, string> = {},
+) {
+  let doc = { ...createTeamMember(person), tasks, completedDates };
+  for (const [date, text] of notes) doc = addTeamNote(doc, date, text);
+  return doc;
+}
+
+describe('teamWeeklyRollup', () => {
+  const weekStart = '2026-08-03';
+  const weekEnd = '2026-08-09';
+
+  const alice = member(
+    'alice',
+    [
+      { title: 'Migrate the queue consumer', status: 'in-progress' },
+      { title: 'Reviewed the design doc', status: 'completed' },
+    ],
+    [
+      ['2026-08-04', 'Shipped the migration script #kudos'],
+      ['2026-08-05', 'Waiting on design review #blocker'],
+      ['2026-08-06', 'Paired with bob on the onboarding checklist'],
+      ['2026-07-20', 'Old note outside this week'],
+    ],
+    { 'Reviewed the design doc': '2026-08-04' },
+  );
+  const bob = member('bob', [{ title: 'Onboarding', status: 'upcoming' }]);
+
+  it('titles the file with the ISO week', () => {
+    expect(teamWeeklyRollup([alice, bob], weekStart, weekEnd)).toContain('# Team — Week 2026-W32');
+  });
+
+  it('counts the reports tracked', () => {
+    expect(teamWeeklyRollup([alice, bob], weekStart, weekEnd)).toContain('Reports tracked: 2');
+  });
+
+  it('sorts reports by handle', () => {
+    const output = teamWeeklyRollup([bob, alice], weekStart, weekEnd);
+    expect(output.indexOf('## @alice')).toBeLessThan(output.indexOf('## @bob'));
+  });
+
+  it('lists open tasks and tasks completed within the week', () => {
+    const output = teamWeeklyRollup([alice], weekStart, weekEnd);
+    expect(output).toContain('- Migrate the queue consumer');
+    expect(output).toContain('- Reviewed the design doc _(2026-08-04)_');
+  });
+
+  it('excludes a task completed before the window from Completed', () => {
+    const early = member('dana', [{ title: 'Shipped last week', status: 'completed' }], [], {
+      'Shipped last week': '2026-07-28',
+    });
+    const output = teamWeeklyRollup([early], weekStart, weekEnd);
+    expect(output).not.toContain('Shipped last week');
+    expect(output).toContain('Nothing completed this week');
+  });
+
+  it('excludes a completed task with no recorded date rather than guessing it belongs here', () => {
+    const undated = member('erin', [{ title: 'Checked by hand', status: 'completed' }]);
+    const output = teamWeeklyRollup([undated], weekStart, weekEnd);
+    expect(output).not.toContain('Checked by hand');
+  });
+
+  it('includes ordinary notes logged within the week, excluding those outside it', () => {
+    const output = teamWeeklyRollup([alice], weekStart, weekEnd);
+    expect(output).toContain('Paired with bob on the onboarding checklist _(2026-08-06)_');
+    expect(output).not.toContain('Old note outside this week');
+  });
+
+  it('pulls a kudos-tagged note into its own section, as a bullet', () => {
+    const output = teamWeeklyRollup([alice], weekStart, weekEnd);
+    expect(output).toContain('### Kudos');
+    expect(output).toContain('- Shipped the migration script #kudos _(2026-08-04)_');
+  });
+
+  it('pulls a blocker-tagged note into its own section, as a bullet', () => {
+    const output = teamWeeklyRollup([alice], weekStart, weekEnd);
+    expect(output).toContain('### Blockers');
+    expect(output).toContain('- Waiting on design review #blocker _(2026-08-05)_');
+  });
+
+  it('does not repeat a kudos or blocker note under Notes this week', () => {
+    const output = teamWeeklyRollup([alice], weekStart, weekEnd);
+    const notesSection = output.split('### Notes this week')[1]?.split('### Open')[0] ?? '';
+    expect(notesSection).not.toContain('#kudos');
+    expect(notesSection).not.toContain('#blocker');
+    expect(notesSection).toContain('Paired with bob on the onboarding checklist');
+  });
+
+  it('omits Kudos and Blockers sections entirely when a report has neither this week', () => {
+    const output = teamWeeklyRollup([bob], weekStart, weekEnd);
+    expect(output).not.toContain('### Kudos');
+    expect(output).not.toContain('### Blockers');
+  });
+
+  it('says so when a report has nothing tracked', () => {
+    const output = teamWeeklyRollup([createTeamMember('carol')], weekStart, weekEnd);
+    expect(output).toContain('Nothing tracked');
+    expect(output).toContain('Nothing completed this week');
+    expect(output).toContain('Nothing logged this week');
+  });
+
+  it('handles no reports tracked yet without throwing', () => {
+    expect(teamWeeklyRollup([], weekStart, weekEnd)).toContain('_No reports tracked yet._');
+  });
+
+  it('never emits three consecutive newlines', () => {
+    expect(teamWeeklyRollup([alice, bob], weekStart, weekEnd)).not.toMatch(/\n{3}/);
+  });
+});
+
+describe('teamWeekFileName', () => {
+  it('names the file for the containing week', () => {
+    expect(teamWeekFileName('2026-08-04')).toBe('2026-W32-team.md');
+  });
+
+  it('returns null for a malformed date', () => {
+    expect(teamWeekFileName('nope')).toBeNull();
+  });
+});
+
+describe('teamWeekBriefing', () => {
+  const weekStart = '2026-08-03';
+  const weekEnd = '2026-08-09';
+  const alice = member(
+    'alice',
+    [{ title: 'Migrate the queue consumer', status: 'in-progress' }],
+    [['2026-08-04', 'Shipped the migration script #kudos']],
+  );
+
+  it('carries the rollup itself', () => {
+    const briefing = teamWeekBriefing([alice], weekStart, weekEnd);
+    expect(briefing).toContain('# Team — Week 2026-W32');
+    expect(briefing).toContain('Migrate the queue consumer');
+  });
+
+  it('carries its own schema key, since the reader never sees CONTEXT.md', () => {
+    const briefing = teamWeekBriefing([alice], weekStart, weekEnd) ?? '';
+    expect(briefing).toContain('## @handle');
+    expect(briefing).toContain('#kudos');
+    expect(briefing).toContain('#blocker');
+  });
+
+  it('puts the preamble before the rollup, not after it', () => {
+    const briefing = teamWeekBriefing([alice], weekStart, weekEnd) ?? '';
+    expect(briefing.indexOf('Conventions:')).toBeLessThan(briefing.indexOf('# Team — Week'));
+  });
+
+  it('returns null when nothing is tracked yet', () => {
+    expect(teamWeekBriefing([], weekStart, weekEnd)).toBeNull();
   });
 });

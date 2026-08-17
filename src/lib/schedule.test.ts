@@ -3,11 +3,14 @@ import { describe, expect, it } from 'vitest';
 import {
   currentSlot,
   describeCheckIn,
+  describeNextWorkingDay,
   dueCheckIn,
+  endsWorkingWeek,
   hasHandledToday,
   INITIAL_CHECK_IN_STATE,
   isWorkingDay,
   markHandled,
+  nextWorkingDay,
   onDemandSlot,
   restoreCheckInState,
   slotClock,
@@ -370,5 +373,109 @@ describe('describeCheckIn', () => {
     expect(describeCheckIn('day-start')).toBe("Here's your day");
     expect(describeCheckIn('hourly')).toBe('Quick check-in');
     expect(describeCheckIn('day-end')).toBe('Wrapping up');
+  });
+
+  it('marks the wrap-up that ends the week', () => {
+    expect(describeCheckIn('day-end', true)).toBe('Wrapping up the week');
+    // Only the wrap-up changes; a Friday morning is still just a morning.
+    expect(describeCheckIn('day-start', true)).toBe("Here's your day");
+  });
+});
+
+describe('nextWorkingDay', () => {
+  it('skips the weekend', () => {
+    // Friday 2026-08-07 → Monday 2026-08-10.
+    expect(nextWorkingDay(new Date(2026, 7, 7), SETTINGS)).toEqual(new Date(2026, 7, 10));
+  });
+
+  it('returns tomorrow mid-week', () => {
+    expect(nextWorkingDay(new Date(2026, 7, 3), SETTINGS)).toEqual(new Date(2026, 7, 4));
+  });
+
+  it('follows a shifted week rather than assuming Sat/Sun', () => {
+    // Tuesday-to-Saturday: Saturday 08-08 rolls to Tuesday 08-11, not Monday.
+    const shifted: Settings = { ...SETTINGS, workDays: [2, 3, 4, 5, 6] };
+    expect(nextWorkingDay(new Date(2026, 7, 8), shifted)).toEqual(new Date(2026, 7, 11));
+  });
+
+  it('wraps a full week for a single-day week', () => {
+    const wednesdaysOnly: Settings = { ...SETTINGS, workDays: [3] };
+    expect(nextWorkingDay(new Date(2026, 7, 5), wednesdaysOnly)).toEqual(new Date(2026, 7, 12));
+  });
+
+  it('gives up rather than looping on a week with no working days', () => {
+    // Unreachable through the UI; a hand-edited settings.json can still get here.
+    expect(nextWorkingDay(new Date(2026, 7, 3), { ...SETTINGS, workDays: [] })).toBeNull();
+  });
+});
+
+describe('describeNextWorkingDay', () => {
+  it('says "tomorrow" when tomorrow is a working day', () => {
+    expect(describeNextWorkingDay(new Date(2026, 7, 3), SETTINGS)).toBe('tomorrow');
+  });
+
+  it('names the day when tomorrow is not', () => {
+    // The reason this function exists: "plan tomorrow?" on a Friday is a
+    // question about a Saturday nobody is going to work.
+    expect(describeNextWorkingDay(new Date(2026, 7, 7), SETTINGS)).toBe('Monday');
+  });
+
+  it('names the right day for a shifted week', () => {
+    const shifted: Settings = { ...SETTINGS, workDays: [2, 3, 4, 5, 6] };
+    expect(describeNextWorkingDay(new Date(2026, 7, 8), shifted)).toBe('Tuesday');
+  });
+
+  it('stays readable when the week is empty', () => {
+    expect(describeNextWorkingDay(new Date(2026, 7, 3), { ...SETTINGS, workDays: [] })).toBe(
+      'your next working day',
+    );
+  });
+});
+
+describe('endsWorkingWeek', () => {
+  it('is true on Friday and false on Thursday', () => {
+    expect(endsWorkingWeek(new Date(2026, 7, 6), SETTINGS)).toBe(false); // Thursday
+    expect(endsWorkingWeek(new Date(2026, 7, 7), SETTINGS)).toBe(true); // Friday
+  });
+
+  it('follows a four-day week', () => {
+    const short: Settings = { ...SETTINGS, workDays: [1, 2, 3, 4] };
+    expect(endsWorkingWeek(new Date(2026, 7, 6), short)).toBe(true); // Thursday
+  });
+
+  it('is not fooled by a mid-week day off', () => {
+    // Wednesdays off. Tuesday is followed by a non-working day but is emphatically
+    // not the end of the week, and saying so twice a week would be worse than
+    // never saying it.
+    const wednesdayOff: Settings = { ...SETTINGS, workDays: [1, 2, 4, 5] };
+    expect(endsWorkingWeek(new Date(2026, 7, 4), wednesdayOff)).toBe(false); // Tuesday
+    expect(endsWorkingWeek(new Date(2026, 7, 7), wednesdayOff)).toBe(true); // Friday
+  });
+
+  it('follows a week that straddles the ISO boundary', () => {
+    // Sunday-to-Thursday. An ISO-week comparison gets this exactly backwards:
+    // Thursday and the following Sunday share an ISO week, so the label would
+    // land on Sunday — the day the week *starts*.
+    const sundayStart: Settings = { ...SETTINGS, workDays: [0, 1, 2, 3, 4] };
+    expect(endsWorkingWeek(new Date(2026, 7, 6), sundayStart)).toBe(true); // Thursday
+    expect(endsWorkingWeek(new Date(2026, 7, 9), sundayStart)).toBe(false); // Sunday
+  });
+
+  it('follows a Tuesday-to-Saturday shift', () => {
+    const shifted: Settings = { ...SETTINGS, workDays: [2, 3, 4, 5, 6] };
+    expect(endsWorkingWeek(new Date(2026, 7, 8), shifted)).toBe(true); // Saturday
+    expect(endsWorkingWeek(new Date(2026, 7, 7), shifted)).toBe(false); // Friday
+  });
+
+  it('is true on the only working day of a one-day week', () => {
+    expect(endsWorkingWeek(new Date(2026, 7, 5), { ...SETTINGS, workDays: [3] })).toBe(true);
+  });
+
+  it('is false on a day that is not a working day at all', () => {
+    expect(endsWorkingWeek(new Date(2026, 7, 8), SETTINGS)).toBe(false); // Saturday
+  });
+
+  it('is false when there is no next working day at all', () => {
+    expect(endsWorkingWeek(new Date(2026, 7, 3), { ...SETTINGS, workDays: [] })).toBe(false);
   });
 });

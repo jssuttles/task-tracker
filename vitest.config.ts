@@ -6,7 +6,7 @@ export default defineConfig({
     // Utility logic is pure and environment-agnostic, so we run it in Node
     // for speed. Switch to 'jsdom' only for tests that touch the DOM.
     environment: 'node',
-    include: ['src/**/*.{test,spec}.ts'],
+    include: ['src/**/*.{test,spec}.ts', 'scripts/**/*.{test,spec}.ts'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov'],

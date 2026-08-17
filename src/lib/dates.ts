@@ -149,3 +149,8 @@ const MONTHS = [
 export function describeDate(date: Date): string {
   return `${WEEKDAYS[date.getDay()]}, ${date.getDate()} ${MONTHS[date.getMonth()]} ${date.getFullYear()}`;
 }
+
+/** The English name of a date's weekday, e.g. `Monday`. */
+export function weekdayName(date: Date): string {
+  return WEEKDAYS[date.getDay()];
+}

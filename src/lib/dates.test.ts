@@ -12,6 +12,7 @@ import {
   toClock,
   toDateKey,
   toWeekKey,
+  weekdayName,
 } from './dates.ts';
 
 describe('toDateKey', () => {
@@ -167,5 +168,13 @@ describe('toWeekKey', () => {
 describe('describeDate', () => {
   it('renders a locale-independent heading', () => {
     expect(describeDate(new Date(2026, 7, 2))).toBe('Sunday, 2 August 2026');
+  });
+});
+
+describe('weekdayName', () => {
+  it('names each day, indexed the way getDay() counts', () => {
+    expect(weekdayName(new Date(2026, 7, 2))).toBe('Sunday');
+    expect(weekdayName(new Date(2026, 7, 3))).toBe('Monday');
+    expect(weekdayName(new Date(2026, 7, 8))).toBe('Saturday');
   });
 });

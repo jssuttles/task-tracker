@@ -18,6 +18,7 @@ Everything lives in `Documents/TaskTracker` as one Markdown file per day:
 
 ```markdown
 ---
+format: 2
 date: 2026-08-03
 work_start: 09:00
 work_end: 17:00
@@ -28,7 +29,7 @@ work_end: 17:00
 ## Tasks
 
 - [ ] Draft the migration RFC
-- [/] Ship the rollback path
+- [/] Ship the rollback path _(added 2026-07-30)_
 - [x] Review the release checklist
 
 ## Notes
@@ -45,6 +46,13 @@ work_end: 17:00
 
 Open tasks roll over to the next day (up to a 4-day gap, so a holiday doesn't
 resurrect a stale list). Completed tasks stay in the day that finished them.
+
+A task that outlives the day it appeared picks up `_(added YYYY-MM-DD)_`. That
+one suffix does two jobs: its presence marks the task as carried over, and it
+means a single line tells you the whole story — the date in the suffix is when
+the work started, the file's own date is when an `[x]` finished it, and the gap
+between them is how long it was open. Work that starts and finishes in a day
+stays unannotated, so a clean day reads clean.
 
 Notes take `@person` and `#tag` inline. `#kudos` is the one that earns its keep:
 it's what makes a year of scattered observations into a review document.
@@ -63,6 +71,54 @@ Hand edits are preserved — sections and frontmatter keys the app doesn't own
 survive its writes untouched, so you and an agent can both write to a day file.
 
 ![The day-start check-in](docs/screenshots/day-start.png)
+
+## Upgrading an existing vault
+
+**If you were using Task Tracker before day files recorded `format: 2`, there is
+one thing to do — once.**
+
+Nothing breaks if you skip it and nothing is lost. Old files stay readable and
+the app never rewrites them with claims they can't support. But they also can't
+say when anything started, and the app deliberately won't guess on their behalf:
+in a `format: 2` file an unannotated task is a positive claim that it started
+that day, and stamping that onto a file written before the field existed would
+invent start dates nobody recorded. So legacy files stay legacy, and an agent
+reading them will correctly report those start dates as unknown.
+
+A one-shot script recovers them properly. It can do what the app can't, because
+it reads the whole vault at once and derives each date from the file a task
+actually first appears in — reconstruction from your own files, not a guess.
+
+```bash
+# 1. Quit the app, so nothing writes underneath you.
+
+# 2. Dry run. Changes nothing; prints each task's derived span, then the diff.
+node --experimental-strip-types scripts/backfill-provenance.ts "$HOME/Documents/TaskTracker"
+
+# 3. Read it. Two weeks of files is small enough to actually check.
+
+# 4. Apply. Copies the whole vault to a timestamped sibling folder first.
+node --experimental-strip-types scripts/backfill-provenance.ts "$HOME/Documents/TaskTracker" --write
+```
+
+On Windows the vault is `%USERPROFILE%\Documents\TaskTracker`, or whatever
+`vaultDir` points at. Running it twice is safe — the second pass reports nothing
+to do.
+
+Two things to expect in the diff:
+
+- **Files are rewritten in the app's canonical form.** `# 2026-07-27` becomes
+  `# Monday, 27 July 2026`, notes sort chronologically, and empty sections gain
+  `_No notes yet._` placeholders. Nothing is lost; this is what your next
+  check-in would have done to those files anyway.
+- **A task title that disappears and comes back is dated as new work**, not as
+  one task open the whole time. That's deliberate — otherwise a recurring
+  "triage the queue" reports as open for a fortnight, which is exactly the kind
+  of number that ends up in a review document.
+
+The one thing it can't recover is a task that was already open before your
+earliest day file. It's dated to the first file it can be observed in, which is
+a floor rather than a fact — the same caveat `CONTEXT.md` gives the agent.
 
 ## Getting started
 
@@ -106,6 +162,11 @@ weekend flag — a Tuesday-to-Saturday shift or a four-day week is just a differ
 list. Monday still inherits Friday's unfinished work: carry-over looks back up to
 four calendar days, which spans a weekend and a long weekend.
 
+The wording follows the same list. The last wrap-up before your longest break
+reads **"Wrapping up the week"** and asks you to plan **Monday** rather than
+"tomorrow" — which, on a Friday, would be a Saturday you weren't going to work.
+For a Sunday-to-Thursday week that day is Thursday, and the hand-off is Sunday.
+
 You can always check in outside the schedule from the tray, including on a day
 off.
 
@@ -115,8 +176,23 @@ off.
 - **Check in now** — open the card outside the schedule.
 - **Copy standup summary** — yesterday's completed work, today's open items and
   any `#blocker` notes, on the clipboard and ready to paste.
+- **Copy week for an agent** — this week's completed work, still-open items and
+  kudos, with a short preamble explaining the notation.
 - **Open vault folder**
 - **Quit**
+
+Both copy actions are also buttons on the check-in card, as **Standup** and
+**Week**.
+
+### Handing a week to an agent
+
+The vault is already agent-readable — point a coding agent at the folder and
+`CONTEXT.md` tells it what the markers mean. **Copy week** is for the case where
+it can't see the folder: pasting into a chat. So the copied text carries its own
+key — what `@name` and `#kudos` mean, that "still open" is a snapshot rather than
+abandoned work, and that a missing day means nothing was logged rather than that
+nothing happened. It's the one output designed to be read with no vault in front
+of you.
 
 ## Verifying it works
 

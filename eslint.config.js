@@ -45,7 +45,13 @@ export default tseslint.config(
 
   // Tooling configs run in Node.
   {
-    files: ['*.config.ts', 'vite.config.ts', 'vitest.config.ts', 'playwright.config.ts'],
+    files: [
+      '*.config.ts',
+      'vite.config.ts',
+      'vitest.config.ts',
+      'playwright.config.ts',
+      'scripts/**/*.ts',
+    ],
     languageOptions: {
       globals: { ...globals.node },
     },

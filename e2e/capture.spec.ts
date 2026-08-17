@@ -12,7 +12,7 @@
 
 import { expect, test } from '@playwright/test';
 
-import { startApp, dayFile, openSettings } from './harness.ts';
+import { startApp, dayFile, openSettings, openTeam } from './harness.ts';
 
 const SHOTS = 'docs/screenshots';
 
@@ -97,4 +97,61 @@ test('capture: the end-of-day wrap-up', async ({ page }) => {
 
   await settle(page);
   await page.screenshot({ path: `${SHOTS}/day-end.png` });
+});
+
+test('capture: the last wrap-up of the week', async ({ page }) => {
+  // 2026-08-07 is a Friday. The one shot where the weekend is visible in the
+  // copy — the headline and the day it hands off to both change.
+  await startApp(page, {
+    now: new Date(2026, 7, 7, 17, 15),
+    files: {
+      '2026-08-07.md': dayFile(
+        '2026-08-07',
+        [
+          { title: 'Ship the rollback path', marker: 'x' },
+          { title: 'Draft the migration RFC', marker: '/' },
+          { title: 'Review the release checklist', marker: ' ' },
+        ],
+        { lastCheckIn: '16:00' },
+      ),
+    },
+  });
+
+  await expect(page.locator('#headline')).toHaveText('Wrapping up the week');
+  await settle(page);
+  await page.screenshot({ path: `${SHOTS}/week-end.png` });
+});
+
+test('capture: the day-end wrap-up with manager mode on', async ({ page }) => {
+  // The one shot that shows the extra day-end step manager mode adds.
+  await startApp(page, {
+    now: new Date(2026, 7, 3, 17, 15),
+    settings: { managerModeEnabled: true },
+    files: {
+      '2026-08-03.md': dayFile('2026-08-03', [{ title: 'Ship the rollback path', marker: 'x' }], {
+        lastCheckIn: '16:00',
+      }),
+    },
+  });
+
+  await expect(page.locator('#team-day-end-form')).toBeVisible();
+  await settle(page);
+  await page.screenshot({ path: `${SHOTS}/day-end-manager-mode.png` });
+});
+
+test('capture: the Team panel', async ({ page }) => {
+  await startApp(page);
+  await openTeam(page);
+
+  await page.fill('#team-person-input', 'alice');
+  await page.press('#team-person-input', 'Enter');
+  await page.fill('#team-task-input', 'Migrate the queue consumer');
+  await page.press('#team-task-input', 'Enter');
+  await page.fill('#team-note-input', 'Shipped the migration script #kudos');
+  await page.press('#team-note-input', 'Enter');
+
+  await expect(page.locator('#team')).toHaveClass(/is-open/);
+  await page.waitForTimeout(600);
+
+  await page.screenshot({ path: `${SHOTS}/team.png` });
 });

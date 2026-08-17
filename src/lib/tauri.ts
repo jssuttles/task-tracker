@@ -75,6 +75,25 @@ export async function requestAttention(): Promise<void> {
   await invoke('request_attention');
 }
 
+/**
+ * Resize the check-in window, then re-pin it to the corner.
+ *
+ * A no-op outside Tauri — there's no window to resize in the browser preview.
+ * Growing downward/rightward from the top-left margin is what `position_top_left`
+ * already does on every show; calling it again after a resize is cheap
+ * insurance against a platform that re-centers or clamps the window when its
+ * size changes.
+ */
+export async function setWindowSize(width: number, height: number): Promise<void> {
+  if (!isTauri()) return;
+
+  const { invoke } = await import('@tauri-apps/api/core');
+  const { getCurrentWindow, LogicalSize } = await import('@tauri-apps/api/window');
+
+  await getCurrentWindow().setSize(new LogicalSize(width, height));
+  await invoke('position_checkin');
+}
+
 /** Copy text to the system clipboard, falling back to the browser API. */
 export async function copyToClipboard(text: string): Promise<void> {
   if (!isTauri()) {
@@ -158,6 +177,11 @@ export function onStandupRequested(handler: () => void): Promise<void> {
   return onTrayEvent('copy-standup', handler);
 }
 
+/** Tray "Copy week for an agent". */
+export function onWeekRequested(handler: () => void): Promise<void> {
+  return onTrayEvent('copy-week', handler);
+}
+
 /** Tray "Open vault folder". */
 export function onOpenVaultRequested(handler: () => void): Promise<void> {
   return onTrayEvent('open-vault', handler);
@@ -166,6 +190,16 @@ export function onOpenVaultRequested(handler: () => void): Promise<void> {
 /** Tray "Settings". */
 export function onSettingsRequested(handler: () => void): Promise<void> {
   return onTrayEvent('open-settings', handler);
+}
+
+/** Tray "Team…" — always available, like every other tray item. */
+export function onTeamRequested(handler: () => void): Promise<void> {
+  return onTrayEvent('open-team', handler);
+}
+
+/** Tray "Copy team week for an agent". */
+export function onTeamWeekRequested(handler: () => void): Promise<void> {
+  return onTrayEvent('copy-team-week', handler);
 }
 
 /**

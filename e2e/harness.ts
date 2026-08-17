@@ -101,6 +101,14 @@ export async function openSettings(page: Page): Promise<void> {
   await page.clock.runFor(100);
 }
 
+/** Open the Team panel the same way `openSettings` opens Settings — see there for why. */
+export async function openTeam(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    document.getElementById('team-open')?.click();
+  });
+  await page.clock.runFor(100);
+}
+
 /** Every filename currently in the browser-backed vault. */
 export function listVaultFiles(page: Page): Promise<string[]> {
   return page.evaluate((prefix) => {
@@ -123,14 +131,23 @@ export async function advanceMinutes(page: Page, minutes: number): Promise<void>
   await page.clock.runFor(minutes * 60_000);
 }
 
-/** A minimal day file, written the way the app writes them. */
+/**
+ * A minimal day file, written the way the app writes them.
+ *
+ * `added` puts the `_(added …)_` suffix on a task, which is how a file records
+ * that the task predates it. Omit it for work that started on `date`.
+ */
 export function dayFile(
   date: string,
-  tasks: readonly { title: string; marker: ' ' | '/' | 'x' }[],
-  extra: { lastCheckIn?: string } = {},
+  tasks: readonly { title: string; marker: ' ' | '/' | 'x'; added?: string }[],
+  extra: { lastCheckIn?: string; formatVersion?: number } = {},
 ): string {
+  const version = extra.formatVersion ?? 2;
   const frontmatter = [
     '---',
+    // Version 1 is the legacy format, which had no such key. Pass it to seed a
+    // file as an older build would have written it.
+    ...(version <= 1 ? [] : [`format: ${String(version)}`]),
     `date: ${date}`,
     'work_start: 09:00',
     'work_end: 17:00',
@@ -140,7 +157,10 @@ export function dayFile(
 
   const taskLines =
     tasks.length > 0
-      ? tasks.map((task) => `- [${task.marker}] ${task.title}`)
+      ? tasks.map(
+          (task) =>
+            `- [${task.marker}] ${task.title}${task.added === undefined ? '' : ` _(added ${task.added})_`}`,
+        )
       : ['_No tasks yet._'];
 
   return [
@@ -155,6 +175,44 @@ export function dayFile(
     '## Notes',
     '',
     '_No notes yet._',
+    '',
+  ].join('\n');
+}
+
+/** A minimal team file, written the way the app writes them. */
+export function teamFile(
+  person: string,
+  tasks: readonly { title: string; marker: ' ' | '/' | 'x'; completedDate?: string }[],
+  notes: readonly { date: string; text: string }[] = [],
+): string {
+  const taskLines =
+    tasks.length > 0
+      ? tasks.map((task) => {
+          const suffix =
+            task.marker === 'x' && task.completedDate !== undefined
+              ? ` _(${task.completedDate})_`
+              : '';
+          return `- [${task.marker}] ${task.title}${suffix}`;
+        })
+      : ['_Nothing tracked yet._'];
+
+  const noteLines =
+    notes.length > 0 ? notes.map((note) => `- ${note.date} — ${note.text}`) : ['_No notes yet._'];
+
+  return [
+    '---',
+    `person: ${person}`,
+    '---',
+    '',
+    `# @${person}`,
+    '',
+    '## Tasks',
+    '',
+    ...taskLines,
+    '',
+    '## Notes',
+    '',
+    ...noteLines,
     '',
   ].join('\n');
 }

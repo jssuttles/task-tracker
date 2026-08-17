@@ -24,6 +24,8 @@ const TAG_PATTERN = /(?<![\w#])#([A-Za-z][A-Za-z0-9_-]*)/g;
 
 /** The tag that marks a moment worth remembering at review time. */
 export const KUDOS_TAG = 'kudos';
+/** The tag that marks something impeding progress. */
+export const BLOCKER_TAG = 'blocker';
 
 function extract(text: string, pattern: RegExp, lowercase: boolean): string[] {
   const seen = new Set<string>();
@@ -62,4 +64,9 @@ export function extractTags(text: string): string[] {
 /** `true` when the text carries the kudos tag. */
 export function isKudos(text: string): boolean {
   return extractTags(text).includes(KUDOS_TAG);
+}
+
+/** `true` when the text carries the blocker tag. */
+export function isBlocker(text: string): boolean {
+  return extractTags(text).includes(BLOCKER_TAG);
 }

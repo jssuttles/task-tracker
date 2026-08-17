@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { extractPeople, extractTags, isKudos, KUDOS_TAG } from './mentions.ts';
+import {
+  BLOCKER_TAG,
+  extractPeople,
+  extractTags,
+  isBlocker,
+  isKudos,
+  KUDOS_TAG,
+} from './mentions.ts';
 
 describe('extractPeople', () => {
   it('finds a mention', () => {
@@ -72,5 +79,20 @@ describe('isKudos', () => {
 
   it('is case-insensitive', () => {
     expect(isKudos(`nice work #${KUDOS_TAG.toUpperCase()}`)).toBe(true);
+  });
+});
+
+describe('isBlocker', () => {
+  it('detects the blocker tag', () => {
+    expect(isBlocker('waiting on design review #blocker')).toBe(true);
+    expect(isBlocker('waiting on design review')).toBe(false);
+  });
+
+  it('is case-insensitive', () => {
+    expect(isBlocker(`stuck #${BLOCKER_TAG.toUpperCase()}`)).toBe(true);
+  });
+
+  it('does not false-positive on a longer tag sharing the same prefix', () => {
+    expect(isBlocker('#blockers everywhere')).toBe(false);
   });
 });

@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { addNote, createDay, parseDay, serializeDay, type DayDocument } from './day.ts';
+import {
+  addNote,
+  createDay,
+  DAY_FORMAT_VERSION,
+  parseDay,
+  serializeDay,
+  type DayDocument,
+} from './day.ts';
 
 const FALLBACK = { date: '2026-08-02', workStart: '09:00', workEnd: '17:00' };
 
@@ -34,29 +41,46 @@ describe('parseDay', () => {
 
   it('reads all three task markers', () => {
     expect(parseDay(SAMPLE, FALLBACK).tasks).toEqual([
-      { title: 'Draft the RFC', status: 'upcoming' },
-      { title: 'Ship the rollback path', status: 'in-progress' },
-      { title: 'Review the checklist', status: 'completed' },
+      { title: 'Draft the RFC', status: 'upcoming', added: '2026-08-02' },
+      { title: 'Ship the rollback path', status: 'in-progress', added: '2026-08-02' },
+      { title: 'Review the checklist', status: 'completed', added: '2026-08-02' },
     ]);
   });
 
   it('accepts an uppercase completed marker', () => {
     const day = parseDay('## Tasks\n\n- [X] Done\n', FALLBACK);
-    expect(day.tasks).toEqual([{ title: 'Done', status: 'completed' }]);
+    expect(day.tasks).toEqual([{ title: 'Done', status: 'completed', added: '2026-08-02' }]);
   });
 
   it('accepts `*` bullets as well as `-`', () => {
     const day = parseDay('## Tasks\n\n* [ ] Starred\n', FALLBACK);
-    expect(day.tasks).toEqual([{ title: 'Starred', status: 'upcoming' }]);
+    expect(day.tasks).toEqual([{ title: 'Starred', status: 'upcoming', added: '2026-08-02' }]);
   });
 
   it('skips an unknown marker rather than guessing at its meaning', () => {
     const day = parseDay('## Tasks\n\n- [?] Mystery\n- [ ] Real\n', FALLBACK);
-    expect(day.tasks).toEqual([{ title: 'Real', status: 'upcoming' }]);
+    expect(day.tasks).toEqual([{ title: 'Real', status: 'upcoming', added: '2026-08-02' }]);
   });
 
   it('skips a checkbox with no title', () => {
     expect(parseDay('## Tasks\n\n- [ ]   \n', FALLBACK).tasks).toEqual([]);
+  });
+
+  it('reads the added date off a carried task', () => {
+    const day = parseDay('## Tasks\n\n- [/] Ship it _(added 2026-07-29)_\n', FALLBACK);
+    expect(day.tasks).toEqual([{ title: 'Ship it', status: 'in-progress', added: '2026-07-29' }]);
+  });
+
+  it("defaults an unannotated task to the file's own date", () => {
+    const day = parseDay('---\ndate: 2026-08-09\n---\n\n## Tasks\n\n- [ ] Fresh\n', FALLBACK);
+    expect(day.tasks[0]?.added).toBe('2026-08-09');
+  });
+
+  it('keeps a lone date suffix as prose rather than reading it as a task title', () => {
+    const day = parseDay('## Tasks\n\n- [ ] _(added 2026-07-29)_\n', FALLBACK);
+    expect(day.tasks).toEqual([
+      { title: '_(added 2026-07-29)_', status: 'upcoming', added: '2026-08-02' },
+    ]);
   });
 
   it('reads timestamped notes', () => {
@@ -147,6 +171,28 @@ describe('serializeDay', () => {
     expect(output).toContain('- [x] Review the checklist');
   });
 
+  it('annotates only the tasks that predate the file', () => {
+    const day = createDay('2026-08-05', '09:00', '17:00', [
+      { title: 'Carried', status: 'in-progress', added: '2026-08-03' },
+      { title: 'Fresh', status: 'upcoming', added: '2026-08-05' },
+    ]);
+
+    const output = serializeDay(day);
+    expect(output).toContain('- [/] Carried _(added 2026-08-03)_');
+    expect(output).toContain('- [ ] Fresh\n');
+    expect(output).not.toContain('- [ ] Fresh _(added');
+  });
+
+  it('round-trips a carried task without drifting its date', () => {
+    const day = createDay('2026-08-05', '09:00', '17:00', [
+      { title: 'Carried', status: 'in-progress', added: '2026-08-03' },
+    ]);
+    const round = parseDay(serializeDay(day), FALLBACK);
+
+    expect(round).toEqual(day);
+    expect(serializeDay(round)).toBe(serializeDay(day));
+  });
+
   it('sorts notes chronologically regardless of insertion order', () => {
     let day = createDay('2026-08-02', '09:00', '17:00');
     day = addNote(day, '15:00', 'later');
@@ -213,9 +259,119 @@ describe('addNote', () => {
 describe('createDay', () => {
   it('seeds tasks carried in from a previous day', () => {
     const day = createDay('2026-08-03', '09:00', '17:00', [
-      { title: 'Carried', status: 'in-progress', carriedOver: true },
+      { title: 'Carried', status: 'in-progress', added: '2026-08-02' },
     ]);
     expect(day.tasks).toHaveLength(1);
-    expect(serializeDay(day)).toContain('- [/] Carried');
+    expect(serializeDay(day)).toContain('- [/] Carried _(added 2026-08-02)_');
+  });
+
+  it("stamps an undated task with the new day's own date", () => {
+    const day = createDay('2026-08-03', '09:00', '17:00', [
+      { title: 'Undated', status: 'upcoming' },
+    ]);
+    expect(day.tasks[0]?.added).toBe('2026-08-03');
+  });
+});
+
+describe('format version', () => {
+  it('treats a file with no format key as version 1', () => {
+    expect(parseDay(SAMPLE, FALLBACK).formatVersion).toBe(1);
+  });
+
+  it('stamps a file the app creates with the current version', () => {
+    const day = createDay('2026-08-02', '09:00', '17:00');
+    expect(day.formatVersion).toBe(DAY_FORMAT_VERSION);
+    expect(serializeDay(day)).toContain('format: 2');
+  });
+
+  it('never writes `format: 1` — version 1 is the absence of the key', () => {
+    const day = parseDay(SAMPLE, FALLBACK);
+    expect(serializeDay(day)).not.toContain('format:');
+  });
+
+  it('does not upgrade a legacy file just because the app edited it', () => {
+    // The whole point: an unannotated task in a v2 file is a claim that it
+    // started that day. Stamping v2 onto a file written before provenance
+    // existed would manufacture that claim for tasks we know nothing about.
+    const edited = addNote(parseDay(SAMPLE, FALLBACK), '11:00', 'still legacy');
+    const round = parseDay(serializeDay(edited), FALLBACK);
+
+    expect(round.formatVersion).toBe(1);
+    expect(serializeDay(edited)).not.toContain('format:');
+  });
+
+  it('preserves a version newer than this build understands', () => {
+    // Downgrading must not strip a future format's marker and leave the file
+    // claiming to be something it is not.
+    const day = parseDay('---\nformat: 7\ndate: 2026-08-02\n---\n', FALLBACK);
+    expect(day.formatVersion).toBe(7);
+    expect(serializeDay(day)).toContain('format: 7');
+  });
+
+  it('falls back to version 1 for a corrupt version rather than assuming the best', () => {
+    for (const raw of ['banana', '', '2.5', '-3']) {
+      expect(parseDay(`---\nformat: ${raw}\ndate: 2026-08-02\n---\n`, FALLBACK).formatVersion).toBe(
+        1,
+      );
+    }
+  });
+
+  it('does not leak the version into unowned fields', () => {
+    const day = parseDay('---\nformat: 2\ndate: 2026-08-02\n---\n', FALLBACK);
+    expect(day.extraFields).toEqual({});
+  });
+
+  it('round-trips at every version it can encounter', () => {
+    for (const source of [
+      SAMPLE,
+      serializeDay(createDay('2026-08-02', '09:00', '17:00')),
+      '---\nformat: 7\ndate: 2026-08-02\n---\n',
+    ]) {
+      const day = parseDay(source, FALLBACK);
+      expect(parseDay(serializeDay(day), FALLBACK)).toEqual(day);
+    }
+  });
+});
+
+describe('compatibility with files this format did not write', () => {
+  // Exactly as the app wrote day files before `added` existed: no suffixes.
+  const OLD_FILE = `---
+date: 2026-08-04
+work_start: 09:00
+work_end: 17:00
+---
+
+# Tuesday, 4 August 2026
+
+## Tasks
+
+- [/] Long-running migration
+- [ ] Fresh thing
+`;
+
+  it('reads a pre-suffix file without loss, dating each task to the file', () => {
+    expect(parseDay(OLD_FILE, FALLBACK).tasks).toEqual([
+      { title: 'Long-running migration', status: 'in-progress', added: '2026-08-04' },
+      { title: 'Fresh thing', status: 'upcoming', added: '2026-08-04' },
+    ]);
+  });
+
+  it('rewrites a pre-suffix file without adding noise to it', () => {
+    const output = serializeDay(parseDay(OLD_FILE, FALLBACK));
+    expect(output).not.toContain('_(added');
+    expect(output).toContain('- [/] Long-running migration');
+  });
+
+  it('reclaims a suffix that an older build swallowed into the title', () => {
+    // An older build has no suffix pattern, so it parses the annotation as part
+    // of the title and writes it back verbatim. Reading that file must recover
+    // the date rather than leave it stuck in the title forever.
+    const mangled =
+      '---\ndate: 2026-08-06\n---\n\n## Tasks\n\n- [/] Migrate _(added 2026-08-04)_\n';
+
+    expect(parseDay(mangled, FALLBACK).tasks).toEqual([
+      { title: 'Migrate', status: 'in-progress', added: '2026-08-04' },
+    ]);
+    expect(serializeDay(parseDay(mangled, FALLBACK))).not.toContain('_(added 2026-08-04)_ _(added');
   });
 });

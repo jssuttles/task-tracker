@@ -28,6 +28,15 @@
           <p id="subhead" class="subhead"></p>
         </div>
         <button
+          id="team-open"
+          class="icon-button is-glyph"
+          type="button"
+          title="Team"
+          aria-label="Team"
+        >
+          👥
+        </button>
+        <button
           id="settings-open"
           class="icon-button is-glyph"
           type="button"
@@ -69,9 +78,57 @@
         <button class="entry-button" type="submit" title="Add note">Note</button>
       </form>
 
+      <!--
+        Only shown at day-end, and only with manager mode on — this is the
+        one place the recurring check-in grows an extra step. It writes to
+        whoever is `@mentioned`, auto-creating their team file if this is the
+        first time.
+      -->
+      <form id="team-day-end-form" class="entry" autocomplete="off" hidden>
+        <input
+          id="team-day-end-input"
+          class="entry-input"
+          type="text"
+          placeholder="Anything on your reports? @alice shipped the migration"
+          aria-label="Log a note about a report"
+          maxlength="500"
+        />
+        <button class="entry-button" type="submit" title="Log">Log</button>
+      </form>
+
       <footer class="card-foot">
         <button id="done" class="primary-button" type="button">Done</button>
-        <button id="copy-standup" class="ghost-button" type="button">Copy standup</button>
+        <button
+          id="copy-standup"
+          class="ghost-button"
+          type="button"
+          title="Yesterday, today and blockers — for standup"
+        >
+          Standup
+        </button>
+        <!--
+          The vault is already agent-readable, so this is not for someone who has
+          the folder. It carries its own schema key so it stands alone when
+          pasted into a chat with an agent that can't see the files.
+        -->
+        <button
+          id="copy-week"
+          class="ghost-button"
+          type="button"
+          title="This week, framed for an agent"
+        >
+          Week
+        </button>
+        <button
+          id="card-expand"
+          class="icon-button is-glyph"
+          type="button"
+          title="Expand"
+          aria-label="Expand"
+          aria-pressed="false"
+        >
+          ⤢
+        </button>
         <span id="status" class="status" role="status"></span>
       </footer>
     </main>
@@ -93,6 +150,16 @@
     >
       <header class="settings-head">
         <h2 id="settings-title" class="settings-title">Settings</h2>
+        <button
+          id="settings-expand"
+          class="icon-button is-glyph"
+          type="button"
+          title="Expand"
+          aria-label="Expand"
+          aria-pressed="false"
+        >
+          ⤢
+        </button>
         <button id="settings-close" class="icon-button" type="button" title="Close (Esc)">
           Close
         </button>
@@ -132,9 +199,16 @@
           <p class="field-hint">The day's opener and wrap-up always run.</p>
         </div>
 
+        <!--
+          The one field whose label reads as a sentence with its control, so it
+          shares the row instead of taking a section heading of its own. That
+          also buys back the ~19px of height that pushed the panel into a
+          scrollbar on platforms whose native time inputs are taller than
+          Chromium's.
+        -->
         <div class="field">
-          <label class="field-label" for="snooze-minutes">Snooze for</label>
           <div class="field-row">
+            <label class="field-joiner" for="snooze-minutes">Snooze for</label>
             <input
               id="snooze-minutes"
               class="entry-input number-input"
@@ -156,6 +230,13 @@
         </div>
 
         <div class="field">
+          <label class="check">
+            <input id="manager-mode-enabled" type="checkbox" />
+            <span>I manage people — add a day-end step for reports</span>
+          </label>
+        </div>
+
+        <div class="field">
           <span class="field-label">Vault folder</span>
           <div class="field-row vault-row">
             <p id="vault-path" class="vault-path"></p>
@@ -168,6 +249,103 @@
         <button id="settings-save" class="primary-button" type="button">Save</button>
         <button id="settings-cancel" class="ghost-button" type="button">Cancel</button>
         <p id="settings-error" class="settings-error" role="alert"></p>
+      </footer>
+    </aside>
+
+    <!--
+      The Team panel: a sibling overlay, same shell as Settings, always
+      reachable from the tray or the card header regardless of manager mode.
+      There is no roster — typing a handle and pressing Open loads that
+      report's file, creating an empty one the first time.
+    -->
+    <aside
+      id="team"
+      class="settings"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="team-title"
+      hidden
+    >
+      <header class="settings-head">
+        <h2 id="team-title" class="settings-title">Team</h2>
+        <button
+          id="team-expand"
+          class="icon-button is-glyph"
+          type="button"
+          title="Expand"
+          aria-label="Expand"
+          aria-pressed="false"
+        >
+          ⤢
+        </button>
+        <button id="team-close" class="icon-button" type="button" title="Close (Esc)">Close</button>
+      </header>
+
+      <div class="settings-body">
+        <div class="field">
+          <span class="field-label">Report</span>
+          <div class="field-row">
+            <input
+              id="team-person-input"
+              class="entry-input"
+              type="text"
+              list="team-people-list"
+              placeholder="@handle"
+              aria-label="Report's handle"
+              maxlength="40"
+            />
+            <button id="team-person-load" class="ghost-button" type="button">Open</button>
+          </div>
+          <datalist id="team-people-list"></datalist>
+          <p id="team-person-error" class="settings-error" role="alert"></p>
+        </div>
+
+        <section class="tasks" aria-labelledby="team-tasks-label">
+          <h2 id="team-tasks-label" class="section-label">What they're working on</h2>
+          <ul id="team-task-list" class="task-list"></ul>
+          <p id="team-empty-state" class="empty-state" hidden>Nothing tracked yet.</p>
+        </section>
+
+        <form id="team-task-form" class="entry" autocomplete="off">
+          <input
+            id="team-task-input"
+            class="entry-input"
+            type="text"
+            placeholder="Add what they're working on…"
+            aria-label="Add a task for this report"
+            maxlength="200"
+          />
+          <button class="entry-button" type="submit" title="Add task">Add</button>
+        </form>
+
+        <form id="team-note-form" class="entry" autocomplete="off">
+          <input
+            id="team-note-input"
+            class="entry-input"
+            type="text"
+            placeholder="Note a thought… #kudos"
+            aria-label="Add a note about this report"
+            maxlength="500"
+          />
+          <button class="entry-button" type="submit" title="Add note">Note</button>
+        </form>
+
+        <div class="field">
+          <span class="field-label">Recent notes</span>
+          <ul id="team-notes" class="team-notes"></ul>
+        </div>
+      </div>
+
+      <footer class="settings-foot">
+        <button
+          id="team-copy-week"
+          class="ghost-button"
+          type="button"
+          title="This week across every tracked report, framed for an agent"
+        >
+          Copy team week
+        </button>
+        <span id="team-status" class="status" role="status"></span>
       </footer>
     </aside>
 

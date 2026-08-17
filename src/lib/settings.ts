@@ -44,6 +44,16 @@ export interface Settings {
    * be expressed by a boolean.
    */
   workDays: number[];
+  /**
+   * Whether the day-end check-in offers an extra step for logging what a
+   * report is up to. The Team panel itself (reachable from the tray, like
+   * Settings) is always available regardless of this — it costs nothing to
+   * open with no reports tracked yet, and files are created from usage, not
+   * from a roster kept here. This setting only controls whether the
+   * *recurring, timer-driven* prompt grows an extra field, the same way
+   * `hourlyEnabled` only controls scheduling and never hides a feature.
+   */
+  managerModeEnabled: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -53,6 +63,7 @@ export const DEFAULT_SETTINGS: Settings = {
   hourlyEnabled: true,
   snoozeMinutes: 10,
   workDays: [1, 2, 3, 4, 5],
+  managerModeEnabled: false,
 };
 
 /** Every day of the week, for the "I work whenever" case. */
@@ -134,6 +145,11 @@ export function parseSettings(input: unknown): Settings {
     hourlyEnabled: readBoolean(source, 'hourlyEnabled', DEFAULT_SETTINGS.hourlyEnabled),
     snoozeMinutes: snooze,
     workDays: readWorkDays(source, DEFAULT_SETTINGS.workDays),
+    managerModeEnabled: readBoolean(
+      source,
+      'managerModeEnabled',
+      DEFAULT_SETTINGS.managerModeEnabled,
+    ),
   };
 
   // A window that ends before it starts would make every slot calculation
@@ -177,6 +193,7 @@ export interface SettingsDraft {
   /** Raw input text, so `''` and `'abc'` are representable and reportable. */
   snoozeMinutes: string;
   workDays: number[];
+  managerModeEnabled: boolean;
 }
 
 /** A field the panel can highlight. */
@@ -199,6 +216,7 @@ export function toDraft(settings: Settings): SettingsDraft {
     hourlyEnabled: settings.hourlyEnabled,
     snoozeMinutes: String(settings.snoozeMinutes),
     workDays: [...settings.workDays],
+    managerModeEnabled: settings.managerModeEnabled,
   };
 }
 
@@ -290,6 +308,7 @@ export function applyDraft(base: Settings, draft: SettingsDraft): Settings {
         ? Math.min(MAX_SNOOZE_MINUTES, Math.max(MIN_SNOOZE_MINUTES, Math.round(snooze)))
         : base.snoozeMinutes,
     workDays: days.length > 0 ? days : [...base.workDays],
+    managerModeEnabled: draft.managerModeEnabled,
   };
 
   // The same pairing rule `parseSettings` applies: a window that ends before it

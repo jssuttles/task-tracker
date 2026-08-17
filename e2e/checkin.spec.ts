@@ -59,11 +59,11 @@ test('cycles a task through its three states', async ({ page }) => {
 
   await task.locator('.task-toggle').click();
   await expect(task).toHaveClass(/is-completed/);
-  await expect(page.locator('#subhead')).toHaveText('1 done, 0 still open — plan tomorrow?');
+  await expect(page.locator('#subhead')).toHaveText('1 done, 0 open — plan tomorrow?');
 
   await task.locator('.task-toggle').click();
   await expect(task).not.toHaveClass(/is-in-progress|is-completed/);
-  await expect(page.locator('#subhead')).toHaveText('0 done, 1 still open — plan tomorrow?');
+  await expect(page.locator('#subhead')).toHaveText('0 done, 1 open — plan tomorrow?');
 });
 
 test('hides completed tasks on the next hourly check-in', async ({ page }) => {
@@ -168,6 +168,44 @@ test("carries yesterday's unfinished work into today", async ({ page }) => {
   await expect(titles).toHaveText(['Carried over', 'Also carried']);
   // The marker that says "this one keeps slipping".
   await expect(page.locator('.task').first()).toHaveClass(/is-carried/);
+
+  // And the day file records when each one first appeared, so the span from
+  // start to finish is readable off a single line later.
+  await page.click('#done');
+  const written = await readVaultFile(page, '2026-08-03.md');
+  expect(written).toContain('- [/] Carried over _(added 2026-07-31)_');
+  expect(written).toContain('- [ ] Also carried _(added 2026-07-31)_');
+});
+
+test('still marks slipped work as carried after a restart', async ({ page }) => {
+  // The regression: "carried" was a flag set at carry-over time and never
+  // written to the file, so a relaunch mid-day re-read today's tasks with the
+  // flag gone and the marker silently vanished from exactly the work it exists
+  // to highlight. It is derived from the recorded date now.
+  await startApp(page, {
+    now: new Date(2026, 7, 3, 10, 45),
+    files: {
+      '2026-08-03.md': dayFile('2026-08-03', [
+        { title: 'Slipped from Friday', marker: '/', added: '2026-07-31' },
+        { title: 'Started today', marker: ' ' },
+      ]),
+    },
+  });
+
+  await expect(page.locator('.task').first()).toHaveClass(/is-carried/);
+  await expect(page.locator('.task').nth(1)).not.toHaveClass(/is-carried/);
+});
+
+test('a task added today is not annotated as if it predated the day', async ({ page }) => {
+  await startApp(page);
+
+  await page.fill('#task-input', 'Started this morning');
+  await page.press('#task-input', 'Enter');
+  await page.click('#done');
+
+  const written = await readVaultFile(page, '2026-08-03.md');
+  expect(written).toContain('- [ ] Started this morning\n');
+  expect(written).not.toContain('Started this morning _(added');
 });
 
 test('does not re-prompt for a check-in completed before a restart', async ({ page }) => {
@@ -220,6 +258,43 @@ test('copies a standup summary to the clipboard', async ({ page }) => {
   const clipboard = await page.evaluate(() => navigator.clipboard.readText());
   expect(clipboard).toContain('Finished on Friday');
   expect(clipboard).toContain('Today’s work');
+});
+
+test('copies the week to the clipboard, framed for an agent', async ({ page }) => {
+  // Monday 2026-08-03 and Tuesday 2026-08-04 are the same ISO week, so both
+  // land in the briefing — this is the assertion that it reads a *week* off
+  // disk rather than whatever the open card happens to hold.
+  await startApp(page, {
+    now: new Date(2026, 7, 4, 10, 30),
+    files: {
+      '2026-08-03.md': dayFile('2026-08-03', [{ title: 'Shipped on Monday', marker: 'x' }]),
+      '2026-08-04.md': dayFile('2026-08-04', [{ title: 'Still going on Tuesday', marker: '/' }], {
+        lastCheckIn: '09:00',
+      }),
+    },
+  });
+
+  await page.evaluate(() => {
+    document.getElementById('copy-week')?.click();
+  });
+  await expect(page.locator('#status')).toHaveClass(/is-visible/);
+
+  const clipboard = await page.evaluate(() => navigator.clipboard.readText());
+  expect(clipboard).toContain('# Week 2026-W32');
+  expect(clipboard).toContain('Shipped on Monday');
+  expect(clipboard).toContain('Still going on Tuesday');
+  // The schema key that makes it stand alone in a chat.
+  expect(clipboard).toContain('`@name` is a colleague');
+});
+
+test('says so rather than copying an empty week', async ({ page }) => {
+  await startApp(page, { now: new Date(2026, 7, 4, 10, 30) });
+
+  await page.evaluate(() => {
+    document.getElementById('copy-week')?.click();
+  });
+
+  await expect(page.locator('#status')).toHaveText('No entries this week');
 });
 
 test('renders task titles as text, never as markup', async ({ page }) => {
@@ -317,6 +392,39 @@ test('asks for the wrap-up after the work day ends', async ({ page }) => {
 
   await expect(page.locator('#card')).toHaveClass(/is-open/);
   await expect(page.locator('#headline')).toHaveText('Wrapping up');
+});
+
+test("Friday's wrap-up plans Monday, not a Saturday nobody works", async ({ page }) => {
+  // 2026-08-07 is a Friday. The unit suite proves the arithmetic; this proves
+  // the controller actually asks the scheduler instead of hard-coding the word.
+  await startApp(page, { now: new Date(2026, 7, 7, 17, 30) });
+
+  await expect(page.locator('#headline')).toHaveText('Wrapping up the week');
+  await expect(page.locator('#subhead')).toHaveText('0 done, 0 open — plan Monday?');
+});
+
+test('a shifted week ends on its own last day', async ({ page }) => {
+  // Sunday-to-Thursday: Thursday 2026-08-06 is the wrap-up that matters, and
+  // the day it hands off to is Sunday.
+  await startApp(page, {
+    now: new Date(2026, 7, 6, 17, 30),
+    settings: { workDays: [0, 1, 2, 3, 4] },
+  });
+
+  await expect(page.locator('#headline')).toHaveText('Wrapping up the week');
+  await expect(page.locator('#subhead')).toContainText('plan Sunday?');
+});
+
+test('a mid-week wrap-up stays an ordinary wrap-up', async ({ page }) => {
+  // Wednesdays off. Tuesday is followed by a day off but is not the end of the
+  // week — the headline must not claim otherwise.
+  await startApp(page, {
+    now: new Date(2026, 7, 4, 17, 30),
+    settings: { workDays: [1, 2, 4, 5] },
+  });
+
+  await expect(page.locator('#headline')).toHaveText('Wrapping up');
+  await expect(page.locator('#subhead')).toContainText('plan Thursday?');
 });
 
 test('writes a weekly rollup when the day is wrapped up', async ({ page }) => {

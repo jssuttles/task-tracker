@@ -28,6 +28,7 @@ describe('parseSettings', () => {
       hourlyEnabled: false,
       snoozeMinutes: 20,
       workDays: [2, 3, 4, 5, 6],
+      managerModeEnabled: true,
     });
     expect(settings).toEqual({
       workStart: '08:30',
@@ -36,7 +37,19 @@ describe('parseSettings', () => {
       hourlyEnabled: false,
       snoozeMinutes: 20,
       workDays: [2, 3, 4, 5, 6],
+      managerModeEnabled: true,
     });
+  });
+
+  it('reads managerModeEnabled, defaulting to false', () => {
+    expect(parseSettings({ managerModeEnabled: true }).managerModeEnabled).toBe(true);
+    expect(parseSettings({}).managerModeEnabled).toBe(false);
+  });
+
+  it('ignores a non-boolean managerModeEnabled', () => {
+    expect(parseSettings({ managerModeEnabled: 'yes' }).managerModeEnabled).toBe(
+      DEFAULT_SETTINGS.managerModeEnabled,
+    );
   });
 
   it('normalizes a single-digit hour', () => {
@@ -262,6 +275,7 @@ describe('applyDraft', () => {
         hourlyEnabled: false,
         snoozeMinutes: '25',
         workDays: [2, 3, 4, 5, 6],
+        managerModeEnabled: true,
       }),
     );
 
@@ -272,6 +286,7 @@ describe('applyDraft', () => {
       hourlyEnabled: false,
       snoozeMinutes: 25,
       workDays: [2, 3, 4, 5, 6],
+      managerModeEnabled: true,
     });
   });
 
@@ -292,6 +307,7 @@ describe('applyDraft', () => {
       hourlyEnabled: false,
       snoozeMinutes: 3,
       workDays: [0, 6],
+      managerModeEnabled: true,
     });
     expect(applyDraft(settings, toDraft(settings))).toEqual(settings);
   });

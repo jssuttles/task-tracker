@@ -20,7 +20,15 @@
  *   14:00 slot is outstanding, without waiting an hour for the first tick.
  */
 
-import { formatClock, minutesSinceMidnight, parseClock, toDateKey, type DateKey } from './dates.ts';
+import {
+  addDays,
+  formatClock,
+  minutesSinceMidnight,
+  parseClock,
+  toDateKey,
+  weekdayName,
+  type DateKey,
+} from './dates.ts';
 import type { Settings } from './settings.ts';
 import { MS_PER_MINUTE } from './time.ts';
 
@@ -73,6 +81,82 @@ function slotKey(date: DateKey, minutes: number): string {
  */
 export function isWorkingDay(date: Date, settings: Settings): boolean {
   return settings.workDays.includes(date.getDay());
+}
+
+/**
+ * The next working day strictly after `date`, or `null` if there is none.
+ *
+ * Searches a full week, so the answer is right whatever shape the working week
+ * is: the day after Friday for a Monday-to-Friday week, the day after Thursday
+ * for a four-day one, and — for someone who works a single day a week — the same
+ * weekday seven days out. `null` is unreachable through the UI (`validateDraft`
+ * refuses an empty week) and exists so a hand-edited `settings.json` can't make
+ * this throw.
+ */
+export function nextWorkingDay(date: Date, settings: Settings): Date | null {
+  for (let offset = 1; offset <= 7; offset += 1) {
+    const candidate = addDays(date, offset);
+    if (isWorkingDay(candidate, settings)) return candidate;
+  }
+  return null;
+}
+
+/**
+ * How to refer to the next working day in prose: `tomorrow`, or the weekday
+ * name when tomorrow isn't a working day.
+ *
+ * This is why the wrap-up doesn't just say "tomorrow". Asked on a Friday to
+ * "plan tomorrow", you either plan a Saturday you won't work or you ignore the
+ * prompt — and the whole point of the end-of-day check-in is that Monday morning
+ * opens with a list already on it.
+ */
+export function describeNextWorkingDay(date: Date, settings: Settings): string {
+  if (isWorkingDay(addDays(date, 1), settings)) return 'tomorrow';
+
+  const next = nextWorkingDay(date, settings);
+  return next === null ? 'your next working day' : weekdayName(next);
+}
+
+/** Days until the next working day after `day`, 1–7. `days` must be sorted and non-empty. */
+function gapAfter(days: readonly number[], day: number): number {
+  const next = days.find((candidate) => candidate > day) ?? days[0];
+  return ((next - day + 6) % 7) + 1;
+}
+
+/**
+ * `true` when `date` is the last working day before the week's longest break.
+ *
+ * "The end of the week" cannot be read off the calendar, and the two obvious
+ * rules are both wrong:
+ *
+ * - **Compare ISO weeks.** ISO weeks start on Monday, so a Sunday-to-Thursday
+ *   week has its last day (Thursday) and its first (Sunday) in the *same* ISO
+ *   week — the label lands on Sunday, the day the week begins.
+ * - **"The next working day isn't tomorrow."** That fires every Tuesday for
+ *   someone who takes Wednesdays off.
+ *
+ * What actually ends a working week is the longest gap in it, which is right for
+ * Monday-to-Friday, a four-day week, a Tuesday-to-Saturday shift and a
+ * Sunday-to-Thursday one alike. Ties go to the later weekday and only arise for
+ * evenly-spread schedules (Sun/Tue/Thu/Sat), where no answer is more right.
+ */
+export function endsWorkingWeek(date: Date, settings: Settings): boolean {
+  const days = [...new Set(settings.workDays)].sort((a, b) => a - b);
+  const day = date.getDay();
+  if (days.length === 0 || !days.includes(day)) return false;
+
+  // Ascending with `>=` means the latest weekday wins a tie.
+  let latest = days[0];
+  let longest = 0;
+  for (const candidate of days) {
+    const gap = gapAfter(days, candidate);
+    if (gap >= longest) {
+      longest = gap;
+      latest = candidate;
+    }
+  }
+
+  return latest === day;
 }
 
 /**
@@ -215,14 +299,21 @@ export function onDemandSlot(now: Date, settings: Settings): CheckInSlot {
   return { kind: 'hourly', key: slotKey(date, minutes), date, minutes };
 }
 
-/** Human label for a slot, used as the check-in card's headline. */
-export function describeCheckIn(kind: CheckInKind): string {
+/**
+ * Human label for a slot, used as the check-in card's headline.
+ *
+ * `endsWeek` is what makes the last wrap-up of the week read differently from
+ * the other four. It changes nothing functionally — it is a cue that this is the
+ * check-in whose leftovers sit untouched until Monday, so it's worth thirty more
+ * seconds than a Tuesday's.
+ */
+export function describeCheckIn(kind: CheckInKind, endsWeek = false): string {
   switch (kind) {
     case 'day-start':
       return "Here's your day";
     case 'hourly':
       return 'Quick check-in';
     case 'day-end':
-      return 'Wrapping up';
+      return endsWeek ? 'Wrapping up the week' : 'Wrapping up';
   }
 }

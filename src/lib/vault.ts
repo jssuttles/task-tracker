@@ -8,6 +8,12 @@
 
 import { addDays, fromDateKey, isDateKey, toDateKey, type Clock, type DateKey } from './dates.ts';
 import { createDay, parseDay, serializeDay, type DayDocument } from './markdown/day.ts';
+import {
+  createTeamMember,
+  parseTeamMember,
+  serializeTeamMember,
+  type TeamMemberDocument,
+} from './markdown/team.ts';
 import { carryOverTasks } from './tasks.ts';
 
 /** Storage for vault files, keyed by filename. */
@@ -21,6 +27,12 @@ export interface VaultPort {
 const DAY_FILE_PATTERN = /^(\d{4}-\d{2}-\d{2})\.md$/;
 /** `YYYY-Www.md`. */
 const WEEK_FILE_PATTERN = /^\d{4}-W\d{2}\.md$/;
+/** `YYYY-Www-team.md` — the manager's weekly view across every tracked report. */
+const TEAM_WEEK_FILE_PATTERN = /^\d{4}-W\d{2}-team\.md$/;
+/** A lowercase handle, the same character set `@mentions` extract. */
+const PERSON_HANDLE_PATTERN = /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/;
+/** `team.<person>.md`. */
+const TEAM_FILE_PATTERN = /^team\.([a-z0-9](?:[a-z0-9._-]*[a-z0-9])?)\.md$/;
 /** Non-dated files the app owns. */
 const STATIC_FILES = ['CONTEXT.md'];
 
@@ -33,7 +45,18 @@ const STATIC_FILES = ['CONTEXT.md'];
  */
 export function isSafeVaultName(name: string): boolean {
   if (name.includes('/') || name.includes('\\') || name.includes('..')) return false;
-  return DAY_FILE_PATTERN.test(name) || WEEK_FILE_PATTERN.test(name) || STATIC_FILES.includes(name);
+  return (
+    DAY_FILE_PATTERN.test(name) ||
+    WEEK_FILE_PATTERN.test(name) ||
+    TEAM_WEEK_FILE_PATTERN.test(name) ||
+    TEAM_FILE_PATTERN.test(name) ||
+    STATIC_FILES.includes(name)
+  );
+}
+
+/** `true` when `handle` is a usable person handle: the `@mention` character set, lowercase. */
+export function isPersonHandle(handle: string): boolean {
+  return PERSON_HANDLE_PATTERN.test(handle);
 }
 
 /** The filename for a given day. */
@@ -124,7 +147,7 @@ export async function openDay(
   }
 
   const previous = await readDay(vault, previousKey, workStart, workEnd);
-  const carried = previous === null ? [] : carryOverTasks(previous.tasks);
+  const carried = previous === null ? [] : carryOverTasks(previous.tasks, previousKey);
   return createDay(date, workStart, workEnd, carried);
 }
 
@@ -145,6 +168,50 @@ export async function readDayRange(
   }
 
   return days;
+}
+
+/** The filename for a report's team file. `person` must already be a valid handle. */
+export function teamFileName(person: string): string {
+  return `team.${person}.md`;
+}
+
+/** The person handle a team filename refers to, or `null` if it isn't one. */
+export function personFromFileName(name: string): string | null {
+  return TEAM_FILE_PATTERN.exec(name)?.[1] ?? null;
+}
+
+/** Every report with a team file in the vault, ascending. */
+export async function listTeamPeople(vault: VaultPort): Promise<string[]> {
+  const names = await vault.list();
+  return names
+    .map(personFromFileName)
+    .filter((person): person is string => person !== null)
+    .sort((a, b) => a.localeCompare(b));
+}
+
+/** Read and parse a report's team file, or `null` if it doesn't exist. */
+export async function readTeamMember(
+  vault: VaultPort,
+  person: string,
+): Promise<TeamMemberDocument | null> {
+  const source = await vault.read(teamFileName(person));
+  if (source === null) return null;
+
+  return parseTeamMember(source, { person });
+}
+
+/** Serialize and write a report's team file. */
+export async function writeTeamMember(vault: VaultPort, member: TeamMemberDocument): Promise<void> {
+  await vault.write(teamFileName(member.person), serializeTeamMember(member));
+}
+
+/** Load a report's team file, creating an empty one if this is the first time they're logged. */
+export async function openTeamMember(
+  vault: VaultPort,
+  person: string,
+): Promise<TeamMemberDocument> {
+  const existing = await readTeamMember(vault, person);
+  return existing ?? createTeamMember(person);
 }
 
 /** Today's date key. Exists so callers don't re-import `dates` for one call. */
