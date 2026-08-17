@@ -34,6 +34,10 @@ something as finished or "working" unless you have run these and seen them pass.
    model. A blank-window regression passes every other gate. Invoke the
    `verify-app` skill, and **look at `docs/screenshots/`** — a capture once
    silently showed the wrong prompt, which no assertion had caught.
+   If _every_ spec fails in ~3ms, that is a missing browser, not your change:
+   Playwright wants a version the image doesn't ship. Point it at the one that
+   is there — `PLAYWRIGHT_CHROMIUM_PATH=/opt/pw-browsers/chromium-<ver>/chrome-linux/chrome`
+   (`ls /opt/pw-browsers` for the version) — and never `npx playwright install`.
 5. **Rust changes pass the Rust gate.** In `src-tauri`: `cargo fmt --check`,
    `cargo clippy --all-targets -- -D warnings`, `cargo check`, `cargo test`.
    All four run in CI, and all four work in this sandbox once the GTK/WebKit dev
@@ -44,6 +48,14 @@ something as finished or "working" unless you have run these and seen them pass.
 7. **Adversarial self-review before declaring victory.** Re-read your own diff
    hunting for the bug that breaks the _app_, not the lint nit. The CSP/stylesheet
    trap below is a real example that passes every automated gate.
+8. **If the change moves something across the MVP line, re-read `README.md`.**
+   Nothing fails when it drifts, so it drifts silently and always in the same
+   direction — claiming shipped work doesn't exist. It once told readers there
+   was no settings UI and to hand-edit `settings.json`, months after the panel
+   shipped with e2e coverage. Check the Status section, the feature it describes,
+   and the tray-menu list against the menu actually built in `src-tauri/src/lib.rs`.
+   Test counts in prose go stale the same way; either update them or don't cite
+   them.
 
 ### Verify, don't assume
 
@@ -177,6 +189,15 @@ docs/
   backfill also groups task titles with its own `normalize`, which must stay in
   step with `sameTask` — two spellings of one task would otherwise be dated as
   two separate runs.
+- **A review surface for a destructive operation is load-bearing code — test it
+  against a known-good case.** The backfill's first diff renderer aligned by line
+  index, so inserting one frontmatter key reported every following line as
+  changed and made a _preserved_ note look deleted. It nearly got reported as
+  data loss in the tool's own output. A human approving a rewrite of the only
+  copy of their notes can only be as careful as the diff lets them be, so a
+  renderer that cries wolf is worse than none — it trains them to click through.
+  It uses an LCS diff now, under a plain-language summary of what each task's
+  derived span actually is.
 - **Writes are atomic and serialized.** Rust writes to a temp file and renames
   (a day file is the only copy of that day's notes); `main.ts` chains every save
   through `this.writes` so concurrent edits can't interleave.
@@ -269,6 +290,16 @@ Each one is applied here; don't undo them.
 | `npm run test:watch`   | Vitest in watch mode                            |
 | `npm run tauri icon X` | Regenerate the platform icon set from `X.png`   |
 
+Run a one-shot script with Node's own type stripping — there is no bundler step
+for `scripts/`, and no `tsx` dependency:
+
+```bash
+node --experimental-strip-types scripts/backfill-provenance.ts <vault-dir>
+```
+
+`scripts/` is inside `tsconfig`, eslint and vitest, so a script and its tests
+are held to the same bar as `src/` and `npm run check` covers them.
+
 Git hooks (Lefthook) auto-run eslint `--fix`, prettier, and project `tsc` on
 staged files at commit time.
 
@@ -290,6 +321,22 @@ The Rust **does** compile here: `cargo check`, `cargo test`, `cargo clippy
 --all-targets -- -D warnings` and `cargo fmt --check` all pass, and `Cargo.lock`
 is committed (CI runs `--locked`). Run them before pushing Rust changes rather
 than waiting for CI.
+
+**A fresh container does not have the system libraries yet**, and the failure
+does not say so — `cargo check` reports `The system library gdk-3.0 required by
+crate gdk-sys was not found`, which reads like the crate is broken. Two
+commands, in this order:
+
+```bash
+apt-get update    # REQUIRED FIRST — a stale index 404s on every package below,
+                  # which looks like they don't exist rather than like a cache miss
+apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev \
+  libayatana-appindicator3-dev librsvg2-dev libsoup-3.0-dev pkg-config
+```
+
+Then all four gates run (~90s for the first `cargo check`; seconds after that).
+Verified in this sandbox. Don't conclude from the first error that Rust can only
+be checked in CI, and don't report the Rust gate as passing without running it.
 
 What this environment lacks is a **desktop webview and a Windows machine**, so
 the following are _reviewed for correctness but never executed_. Verify each on

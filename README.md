@@ -128,20 +128,28 @@ npm run dev          # browser preview of the card — no Rust needed
 npm run tauri dev    # the real desktop app (needs the Rust toolchain)
 ```
 
-Settings live in `settings.json` in the app config directory:
+Settings are edited from the **gear on the check-in card** or **Settings…** in
+the tray, and persist to `settings.json` in the app config directory:
 
-| Setting         | Default       | What it does                                            |
-| --------------- | ------------- | ------------------------------------------------------- |
-| `workStart`     | `09:00`       | When the day-start prompt fires.                        |
-| `workEnd`       | `17:00`       | When the wrap-up prompt fires.                          |
-| `vaultDir`      | (default)     | Vault folder; empty means `Documents/TaskTracker`.      |
-| `hourlyEnabled` | `true`        | Hourly nudges between start and end.                    |
-| `snoozeMinutes` | `10`          | How long Esc / Snooze defers a check-in.                |
-| `workDays`      | `[1,2,3,4,5]` | Which days to prompt on, `0` = Sunday … `6` = Saturday. |
+| Setting              | Default       | What it does                                            |
+| -------------------- | ------------- | ------------------------------------------------------- |
+| `workStart`          | `09:00`       | When the day-start prompt fires.                        |
+| `workEnd`            | `17:00`       | When the wrap-up prompt fires.                          |
+| `vaultDir`           | (default)     | Vault folder; empty means `Documents/TaskTracker`.      |
+| `hourlyEnabled`      | `true`        | Hourly nudges between start and end.                    |
+| `snoozeMinutes`      | `10`          | How long Esc / Snooze defers a check-in.                |
+| `workDays`           | `[1,2,3,4,5]` | Which days to prompt on, `0` = Sunday … `6` = Saturday. |
+| `managerModeEnabled` | `false`       | Adds a day-end step for logging what a report is up to. |
 
-> There is no settings UI yet — editing that file by hand is currently the only
-> way to change your hours. It's the largest remaining gap before v0.1; see
-> [`docs/future-work.md`](docs/future-work.md).
+The panel also toggles launch-at-login, which is OS state rather than a key in
+that file, and shows the active vault path read-only — pointing it somewhere
+else still means editing `vaultDir` by hand, because a folder picker needs a
+capability the app doesn't currently ask for.
+
+Editing the file directly still works. A corrupt or partial `settings.json` is
+silently repaired to defaults so the app always starts; the panel does the
+opposite and reports what's wrong, because a form that quietly reverts what you
+typed teaches you nothing.
 
 ## How it interrupts you
 
@@ -178,7 +186,10 @@ off.
   any `#blocker` notes, on the clipboard and ready to paste.
 - **Copy week for an agent** — this week's completed work, still-open items and
   kudos, with a short preamble explaining the notation.
+- **Team…** — open, create and update a per-report file. Also on the card.
+- **Copy team week for an agent** — the same week across every tracked report.
 - **Open vault folder**
+- **Settings…** — the same panel as the card's gear, openable with nothing due.
 - **Quit**
 
 Both copy actions are also buttons on the check-in card, as **Standup** and
@@ -224,19 +235,20 @@ runs format, lint, typecheck and tests; `npm run build` proves it bundles.
 
 ## Status
 
-Pre-v0.1. The web layer is built and tested (274 unit tests plus 25 end-to-end
+Pre-v0.1. The web layer is built and tested (461 unit tests plus 82 end-to-end
 tests driving the real card in a browser), and the Rust layer compiles clean —
 `cargo check`, `cargo test`, `cargo clippy -D warnings` and `cargo fmt --check`
 all pass.
 
-What has **never run** is the app itself on a Windows desktop. See "Known
-unknowns" in [`docs/future-work.md`](docs/future-work.md) for what needs
+Everything above the MVP line in [`docs/future-work.md`](docs/future-work.md) is
+built: the check-in loop, the vault and its rollups, the settings panel, manager
+mode, and the tray.
+
+What has **never run** is the app itself on a Windows desktop. That is the only
+thing standing between this and v0.1. See "Known unknowns" for what needs
 verifying on real hardware, starting with whether the card can take keyboard
 focus under Windows' foreground-activation rules — the one open question that
 could force a design change.
-
-The largest missing feature is a settings UI; work hours are currently only
-editable by hand.
 
 ## License
 
