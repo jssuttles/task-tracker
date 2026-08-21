@@ -1,0 +1,11 @@
+# pnpm 10+ blocks dependency build scripts by default and warns about each one
+# it skipped. Declaring the decision here silences the expected case, so a new
+# unexpected skip still stands out instead of being lost in familiar noise.
+#
+# lefthook: false — its postinstall downloads a binary it doesn't need. The
+# package ships platform binaries as optional dependencies
+# (`lefthook-linux-x64` and friends) and resolves them through `get-exe.js`,
+# so hooks install correctly without ever running the script. Setting this to
+# `true` would restore a download for nothing.
+allowBuilds:
+  lefthook: false

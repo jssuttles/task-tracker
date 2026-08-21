@@ -22,30 +22,33 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      - name: Set up pnpm
+        uses: pnpm/setup@v2
+
       - name: Set up Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: 24
-          cache: npm
+          cache: pnpm
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Check formatting
-        run: npm run format:check
+        run: pnpm run format:check
 
       - name: Lint
-        run: npm run lint
+        run: pnpm run lint
 
       - name: Typecheck
-        run: npm run typecheck
+        run: pnpm run typecheck
 
       - name: Unit tests
-        run: npm run test
+        run: pnpm run test
 
       # A green lint/test run does not prove the app bundles.
       - name: Build
-        run: npm run build
+        run: pnpm run build
 
   # Drive the real app in a browser. The unit job proves the logic is right; this
   # proves the app actually runs — that the controller finds its elements, that
@@ -58,24 +61,27 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      - name: Set up pnpm
+        uses: pnpm/setup@v2
+
       - name: Set up Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: 24
-          cache: npm
+          cache: pnpm
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Install Chromium
-        run: npx playwright install --with-deps chromium
+        run: pnpm exec playwright install --with-deps chromium
 
       - name: Run end-to-end tests
-        run: npm run e2e
+        run: pnpm run e2e
 
       - name: Upload report
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-report
           path: playwright-report/
@@ -85,7 +91,7 @@ jobs:
       # visual regression reviewable without checking the branch out.
       - name: Upload screenshots
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: screenshots
           path: docs/screenshots/
@@ -116,18 +122,21 @@ jobs:
             libdbus-1-dev \
             pkg-config
 
+      - name: Set up pnpm
+        uses: pnpm/setup@v2
+
       - name: Set up Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: 24
-          cache: npm
+          cache: pnpm
 
       # generate_context! embeds the built frontend and icons at compile time,
       # so the frontend must exist before cargo runs.
       - name: Build frontend
         run: |
-          npm ci
-          npm run build
+          pnpm install --frozen-lockfile
+          pnpm run build
 
       - name: Cache Rust build
         uses: Swatinem/rust-cache@v2

@@ -123,9 +123,9 @@ a floor rather than a fact — the same caveat `CONTEXT.md` gives the agent.
 ## Getting started
 
 ```bash
-npm install          # deps + git hooks
-npm run dev          # browser preview of the card — no Rust needed
-npm run tauri dev    # the real desktop app (needs the Rust toolchain)
+pnpm install          # deps + git hooks
+pnpm run dev          # browser preview of the card — no Rust needed
+pnpm run tauri dev    # the real desktop app (needs the Rust toolchain)
 ```
 
 Settings are edited from the **gear on the check-in card** or **Settings…** in
@@ -208,9 +208,9 @@ of you.
 ## Verifying it works
 
 ```bash
-npm run check    # format, lint, typecheck, unit tests
-npm run build    # it bundles
-npm run e2e      # it actually runs — the real card, driven in a browser
+pnpm run check    # format, lint, typecheck, unit tests
+pnpm run build    # it bundles
+pnpm run e2e      # it actually runs — the real card, driven in a browser
 ```
 
 The end-to-end suite drives the real check-in card: adding tasks, cycling
@@ -219,7 +219,7 @@ possible because the frontend is framework-free and browser-runnable, so the
 browser exercises the same controller, scheduler and serializer as the desktop
 build.
 
-`npm run e2e -- capture` regenerates `docs/screenshots/`. Look at them — a
+`pnpm run e2e -- capture` regenerates `docs/screenshots/`. Look at them — a
 screenshot has already caught a wrong prompt that no assertion did.
 
 What e2e cannot cover: the tray, window positioning, transparency,
@@ -230,8 +230,8 @@ launch-at-login, and Windows focus behavior. Those need real hardware.
 Tauri v2, vanilla TypeScript, Vite. No UI framework, on purpose — the app runs
 all day, so idle memory is a feature.
 
-Pure logic lives in `src/lib` with sibling `*.test.ts` files. `npm run check`
-runs format, lint, typecheck and tests; `npm run build` proves it bundles.
+Pure logic lives in `src/lib` with sibling `*.test.ts` files. `pnpm run check`
+runs format, lint, typecheck and tests; `pnpm run build` proves it bundles.
 
 ## Status
 
